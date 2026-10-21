@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="custom">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover" />
+  <title>Second Brain</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app" class="app-shell" hidden>
+
+    <header class="navbar">
+      <button class="icon-btn big sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar" aria-label="Toggle sidebar">☰</button>
+      <div class="nav-brand" title="Home">Second Brain</div>
+      <div class="nav-actions">
+        <button class="btn btn-sm" id="quick-open-btn" title="Quick open (Ctrl/Cmd+K)">🔍<span class="lbl"> Quick open</span></button>
+        <button class="btn btn-primary btn-sm" id="new-note-btn" title="New note (Alt+N)">+<span class="lbl"> New Note</span></button>
+        <button class="btn btn-sm nav-tab" data-view="graph">Graph</button>
+        <button class="btn btn-sm nav-tab" data-view="canvas">Canvas</button>
+        <div class="user-profile">
+          <img id="user-avatar" alt="" width="32" height="32" />
+          <span id="user-name" class="lbl">User</span>
+          <button class="btn btn-sm btn-ghost" id="signout-btn"><span class="lbl">Sign Out</span><span class="lbl-sm">⏻</span></button>
+        </div>
+      </div>
+    </header>
+
+    <div class="main-body">
+      <div class="sidebar-scrim" id="sidebar-scrim"></div>
+
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-top">
+          <div class="sb-row">
+            <button class="btn btn-primary btn-sm grow" id="new-note-sidebar">+ Note</button>
+            <button class="btn btn-sm grow" id="new-project-btn">+ Project</button>
+          </div>
+          <div class="search-wrap">
+            <input id="search-input" type="search" placeholder="Search notes…  (Ctrl+Shift+F)" autocomplete="off" spellcheck="false" />
+            <button id="search-clear" class="icon-btn" title="Clear" hidden>×</button>
+          </div>
+          <div class="sb-row sb-sort">
+            <label for="sort-select">Sort</label>
+            <select id="sort-select" class="select-clean select-sm">
+              <option value="modified">Last modified</option>
+              <option value="created">Newest first</option>
+              <option value="name">Name (A–Z)</option>
+            </select>
+          </div>
+          <div id="tag-filter" class="tag-filter" hidden></div>
+        </div>
+        <div class="notes-list" id="notes-list"></div>
+        <div class="sidebar-foot" id="sb-count"></div>
+      </aside>
+
+      <main class="editor-area">
+        <div id="dashboard-view" class="home"></div>
+
+        <div id="note-view" class="note-container" hidden>
+          <div class="note-toolbar">
+            <button class="icon-btn big back-btn" id="note-back-btn" title="Back to list">←</button>
+            <div class="mode-switch" role="tablist">
+              <button class="mode-btn" data-mode="edit" title="Editor only">Edit</button>
+              <button class="mode-btn" data-mode="split" title="Editor + preview">Split</button>
+              <button class="mode-btn" data-mode="preview" title="Preview only (Ctrl+E)">Preview</button>
+            </div>
+            <span id="save-status" class="save-status">Saved</span>
+            <span class="spacer"></span>
+            <button class="icon-btn big" id="pin-btn" title="Pin note">☆</button>
+            <button class="icon-btn big danger" id="delete-note-btn" title="Delete note">🗑</button>
+          </div>
+
+          <input type="text" id="note-title-input" class="note-title" placeholder="Untitled" spellcheck="false" />
+
+          <div class="note-meta-row">
+            <select id="note-project-select" class="select-clean" title="Project">
+              <option value="">No project</option>
+            </select>
+            <div class="tags-box" id="tags-box">
+              <input id="tag-input" class="tag-input" placeholder="Add tag…" autocomplete="off" />
+            </div>
+          </div>
+
+          <div class="editor-panes" id="editor-panes" data-mode="split">
+            <textarea id="note-content-input" class="note-content" spellcheck="false"
+              placeholder="Start writing…&#10;&#10;Markdown works. Type [[ to link another note, #tag for tags, - [ ] for tasks.&#10;Drag a note from the sidebar to drop a [[backlink]] here."></textarea>
+            <div id="note-preview" class="note-preview"></div>
+          </div>
+
+          <div class="editor-foot">
+            <span id="word-count"></span>
+            <span id="meta-info"></span>
+          </div>
+          <div id="backlinks" class="backlinks"></div>
+        </div>
+
+        <div id="graph-view" class="full-view" hidden>
+          <div id="graph-container" class="graph-canvas"></div>
+          <div class="graph-settings" id="graph-settings">
+            <button class="btn btn-sm" id="cfg-toggle">⚙<span class="lbl"> Forces</span></button>
+            <div class="panel">
+              <label>Repel force <input type="range" id="cfg-repel" min="20" max="400" step="2" value="120" /></label>
+              <label>Link distance <input type="range" id="cfg-link" min="30" max="220" step="2" value="80" /></label>
+              <label>Center force <input type="range" id="cfg-center" min="0" max="0.3" step="0.005" value="0.05" /></label>
+              <label>Node size <input type="range" id="cfg-size" min="0.5" max="2.5" step="0.05" value="1" /></label>
+              <label class="cfg-check"><input type="checkbox" id="cfg-hide-labels" /> Hide node names</label>
+            </div>
+          </div>
+
+          <div class="timelapse-bar" id="timelapse-bar">
+            <button class="tl-main-btn" id="tl-play" title="Play timelapse">▶ Timelapse</button>
+            <div class="tl-controls">
+              <input type="range" id="tl-slider" min="0" max="1000" value="1000" step="1" disabled />
+              <div class="tl-speed-col" id="tl-speed" hidden>
+                <button type="button" class="tl-speed-btn" data-speed="1">1×</button>
+                <button type="button" class="tl-speed-btn" data-speed="2">2×</button>
+                <button type="button" class="tl-speed-btn" data-speed="3">3×</button>
+                <button type="button" class="tl-speed-btn" data-speed="4">4×</button>
+                <button type="button" class="tl-speed-btn" data-speed="5">5×</button>
+                <button type="button" class="tl-speed-btn" data-speed="10">10×</button>
+                <button type="button" class="tl-speed-btn" data-speed="50">50×</button>
+                <button type="button" class="tl-speed-btn" data-speed="100">100×</button>
+              </div>
+            </div>
+            <button class="tl-close-btn" id="tl-close" title="Exit timelapse" hidden>×</button>
+          </div>
+        </div>
+
+        <div id="canvas-view" class="full-view" hidden>
+          <div class="canvas-header">
+            <select id="canvas-select" class="select-clean select-sm"></select>
+            <button class="btn btn-sm" id="canvas-new" title="New canvas">+ New</button>
+            <button class="icon-btn" id="canvas-rename" title="Rename canvas">✎</button>
+            <button class="icon-btn danger" id="canvas-delete" title="Delete canvas">🗑</button>
+            <span class="spacer"></span>
+            <button class="btn btn-sm" id="canvas-import" title="Import another canvas as an embed">⤵ Import</button>
+            <button class="btn btn-sm" id="canvas-reset-view" title="Zoom to fit">Zoom to fit</button>
+          </div>
+          <div class="canvas-area" id="canvas-area">
+            <div class="canvas-world" id="canvas-world">
+              <svg class="canvas-edges" id="canvas-edges" xmlns="http://www.w3.org/2000/svg"></svg>
+            </div>
+
+            <div id="card-toolbar" class="canvas-ui" hidden></div>
+
+            <div class="canvas-ui canvas-ui-tr">
+              <button class="icon-btn" id="tool-zoom-in" title="Zoom in">+</button>
+              <button class="icon-btn" id="tool-zoom-out" title="Zoom out">−</button>
+              <button class="icon-btn" id="tool-fit" title="Zoom to fit">⤢</button>
+              <button class="icon-btn" id="tool-undo" title="Undo">↶</button>
+              <button class="icon-btn" id="tool-redo" title="Redo">↷</button>
+              <div class="canvas-opts-wrap">
+                <button class="icon-btn" id="canvas-opts-toggle" title="Canvas options">⚙</button>
+                <div class="canvas-opts-panel" id="canvas-opts-panel" hidden>
+                  <label><input type="checkbox" id="opt-grid" /> Snap to grid</label>
+                  <label><input type="checkbox" id="opt-objects" /> Snap to object</label>
+                  <label><input type="checkbox" id="opt-physics" /> Physics</label>
+                  <label><input type="checkbox" id="opt-readonly" /> Read-only</label>
+                </div>
+              </div>
+            </div>
+
+            <div class="canvas-ui canvas-ui-bottom">
+              <button class="canvas-add-btn" id="tool-card" title="Drag onto canvas, or click to add" draggable="true">
+                <span class="cab-ic">▭</span><span class="cab-lbl">Add card</span>
+              </button>
+              <button class="canvas-add-btn" id="tool-note" title="Add a card from your notes">
+                <span class="cab-ic">📄</span><span class="cab-lbl">Add from notes</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div id="wiki-suggest" class="wiki-suggest" hidden></div>
+
+  <!-- AUTH SCREEN -->
+  <div id="auth-screen" class="auth-screen">
+    <div class="auth-card" style="width: min(400px, 90vw);">
+      <h1>Second Brain</h1>
+      <p class="muted" style="margin-bottom: 20px;">Your private knowledge system.</p>
+      
+      <button class="btn btn-primary" id="google-signin" style="width: 100%; margin-bottom: 15px;">Sign in with Google</button>
+
+      <div style="margin: 10px 0; color: var(--text-muted); font-size: 0.8rem; text-align: center;">OR</div>
+
+      <div id="email-auth-form" style="display: flex; flex-direction: column; gap: 10px;">
+        
+        <input type="text" id="username-input" placeholder="Username (e.g. zeel)" style="display: none; padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-dark); color: var(--text-main); outline: none;" />
+        <div id="username-warning" style="display: none; font-size: 0.75rem; color: #f59e0b; margin-top: -5px; margin-bottom: 5px;">
+          ⚠️ Username cannot be changed later.
+        </div>
+
+        <input type="email" id="email-input" placeholder="Email address" style="padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-dark); color: var(--text-main); outline: none;" />
+        
+        <div style="position: relative;">
+          <input type="password" id="password-input" placeholder="Password (min 6 characters)" style="width: 100%; padding: 10px; padding-right: 40px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-dark); color: var(--text-main); outline: none;" />
+          <button type="button" id="toggle-password" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.1rem;">👁️</button>
+        </div>
+        
+        <div style="display: flex; gap: 10px; margin-top: 5px;">
+          <button class="btn btn-primary" id="signin-btn" style="flex: 1;">Sign In</button>
+          <button class="btn" id="signup-btn" style="flex: 1; background: transparent;">Sign Up</button>
+        </div>
+
+        <div style="text-align: center; margin-top: 5px;">
+          <a href="#" id="forgot-password-btn" style="color: var(--text-muted); font-size: 0.8rem; text-decoration: none;">Forgot password?</a>
+        </div>
+
+      </div>
+
+      <p class="error-text" id="auth-error" style="margin-top: 15px;"></p>
+    </div>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div id="modal-root"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

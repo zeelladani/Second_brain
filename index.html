@@ -30,21 +30,18 @@
 
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-top">
-          <div class="sb-row">
-            <button class="btn btn-primary btn-sm grow" id="new-note-sidebar">+ Note</button>
-            <button class="btn btn-sm grow" id="new-project-btn">+ Project</button>
+          <div class="sb-toolbar">
+            <button class="sb-ic" id="new-note-sidebar" title="New note (Alt+N)" aria-label="New note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+            <button class="sb-ic" id="new-canvas-sidebar" title="New canvas" aria-label="New canvas"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="4" width="7" height="7" rx="1"/><rect x="8" y="14" width="8" height="7" rx="1"/><path d="M10 6.5h4"/><path d="M12 11v3"/></svg></button>
+            <button class="sb-ic" id="new-project-btn" title="New project" aria-label="New project"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M12 10v6"/><path d="M9 13h6"/></svg></button>
+            <button class="sb-ic" id="sort-btn" title="Change sort order" aria-label="Change sort order"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="M11 4h10"/><path d="M11 8h7"/><path d="M11 12h4"/></svg></button>
+            <button class="sb-ic" id="reveal-btn" title="Auto-reveal current file" aria-label="Auto-reveal current file"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg></button>
+            <button class="sb-ic" id="collapse-btn" title="Collapse all" aria-label="Collapse all"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/></svg></button>
+            <button class="sb-ic" id="search-toggle" title="Search (Ctrl+Shift+F)" aria-label="Search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></button>
           </div>
-          <div class="search-wrap">
+          <div class="search-wrap" id="search-wrap" hidden>
             <input id="search-input" type="search" placeholder="Search notes…  (Ctrl+Shift+F)" autocomplete="off" spellcheck="false" />
             <button id="search-clear" class="icon-btn" title="Clear" hidden>×</button>
-          </div>
-          <div class="sb-row sb-sort">
-            <label for="sort-select">Sort</label>
-            <select id="sort-select" class="select-clean select-sm">
-              <option value="modified">Last modified</option>
-              <option value="created">Newest first</option>
-              <option value="name">Name (A–Z)</option>
-            </select>
           </div>
           <div id="tag-filter" class="tag-filter" hidden></div>
         </div>
@@ -162,6 +159,9 @@
             <div class="canvas-ui canvas-ui-bottom">
               <button class="canvas-add-btn" id="tool-card" title="Drag onto canvas, or click to add" draggable="true">
                 <span class="cab-ic">▭</span><span class="cab-lbl">Add card</span>
+              </button>
+              <button class="canvas-add-btn" id="tool-group" title="Add a group (wraps the selected cards)">
+                <span class="cab-ic">⬚</span><span class="cab-lbl">Add group</span>
               </button>
               <button class="canvas-add-btn" id="tool-note" title="Add a card from your notes">
                 <span class="cab-ic">📄</span><span class="cab-lbl">Add from notes</span>

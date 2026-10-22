@@ -22,7 +22,6 @@ const canvasSvg = $("canvas-edges");
 const searchInput = $("search-input");
 const searchClear = $("search-clear");
 const tagFilterEl = $("tag-filter");
-const sortSelect = $("sort-select");
 const sbCount = $("sb-count");
 const saveStatus = $("save-status");
 const pinBtn = $("pin-btn");
@@ -643,6 +642,7 @@ function renderTagFilter() {
 function noteItem(note, { snippet } = {}) {
   const item = el("div", "note-item" + (state.activeNoteId === note.id ? " active" : ""));
   item.draggable = true;
+  item.dataset.noteId = note.id;
 
   const main = el("div", "ni-main");
   if (note.pinned) main.append(el("span", "ni-pin", "★"));
@@ -692,7 +692,8 @@ function groupEl({ id, name, color, notes, canvases, project, droppable, icon })
   const collapsed = state.collapsed.has(id);
   const g = el("div", "nl-group" + (collapsed ? " collapsed" : ""));
   const head = el("div", "nl-head");
-  
+  head.dataset.groupId = id;
+  if (project) head.dataset.projectId = project.id;
   head.append(el("span", "chev", collapsed ? "▸" : "▾"));
   if (icon) head.append(el("span", "nl-icon", icon));
   else { 
@@ -752,6 +753,7 @@ function groupEl({ id, name, color, notes, canvases, project, droppable, icon })
 }
 
 function renderNotesList() {
+  paintCollapseBtn();
   renderTagFilter();
   const q = state.search.trim();
   const notes = filteredNotes();
@@ -844,10 +846,247 @@ searchInput.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { searchInput.value = ""; state.search = ""; searchClear.hidden = true; renderNotesList(); searchInput.blur(); }
   if (e.key === "Enter") { const first = filteredNotes().sort(sorters[state.sort])[0]; if (first) openNote(first); }
 });
-sortSelect.value = state.sort;
-sortSelect.addEventListener("change", () => { state.sort = sortSelect.value; lsSet("sb-sort", state.sort); renderNotesList(); });
 $("new-note-sidebar").addEventListener("click", () => newNote());
 $("new-project-btn").addEventListener("click", () => newProjectFlow());
+$("new-canvas-sidebar").addEventListener("click", () => newCanvasFlow());
+
+/* ---------- Sidebar toolbar, context menus, rename, reveal (Obsidian-style) ---------- */
+const searchWrap = $("search-wrap");
+function openSearch() {
+  searchWrap.hidden = false;
+  $("search-toggle").classList.add("on");
+  searchInput.focus();
+  searchInput.select();
+}
+function closeSearch() {
+  searchInput.value = ""; state.search = ""; searchClear.hidden = true;
+  searchWrap.hidden = true;
+  $("search-toggle").classList.remove("on");
+  renderNotesList();
+}
+$("search-toggle").addEventListener("click", () => (searchWrap.hidden ? openSearch() : closeSearch()));
+searchInput.addEventListener("keydown", (e) => { if (e.key === "Escape") { searchWrap.hidden = true; $("search-toggle").classList.remove("on"); } });
+
+/* generic context menu */
+let ctxEl = null;
+function hideCtx() { if (ctxEl) { ctxEl.remove(); ctxEl = null; } }
+function showCtx(x, y, items) {
+  hideCtx();
+  const m = el("div", "ctx-menu");
+  items.forEach((it) => {
+    if (it.sep) { m.append(el("div", "ctx-sep")); return; }
+    if (it.heading) { m.append(el("div", "ctx-head", it.heading)); return; }
+    const b = el("button", "ctx-item" + (it.danger ? " danger" : ""));
+    b.type = "button";
+    b.append(el("span", "ctx-chk", it.checked ? "✓" : ""), el("span", "", it.label));
+    b.addEventListener("click", (ev) => { ev.stopPropagation(); hideCtx(); it.run(); });
+    m.append(b);
+  });
+  document.body.append(m);
+  const r = m.getBoundingClientRect();
+  m.style.left = Math.max(4, Math.min(window.innerWidth - r.width - 4, x)) + "px";
+  m.style.top = Math.max(4, Math.min(window.innerHeight - r.height - 4, y)) + "px";
+  ctxEl = m;
+}
+document.addEventListener("pointerdown", (e) => { if (ctxEl && !ctxEl.contains(e.target)) hideCtx(); }, true);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideCtx(); }, true);
+window.addEventListener("resize", hideCtx);
+notesList.addEventListener("scroll", hideCtx);
+
+/* sort menu */
+$("sort-btn").addEventListener("click", (e) => {
+  const r = e.currentTarget.getBoundingClientRect();
+  const set = (v) => () => { state.sort = v; lsSet("sb-sort", v); renderNotesList(); };
+  showCtx(r.left, r.bottom + 4, [
+    { label: "Last modified", checked: state.sort === "modified", run: set("modified") },
+    { label: "Date created (newest first)", checked: state.sort === "created", run: set("created") },
+    { label: "Name (A–Z)", checked: state.sort === "name", run: set("name") }
+  ]);
+});
+
+/* collapse / expand all */
+const ICON_COLLAPSE = '<svg viewBox="0 0 24 24"><path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/></svg>';
+const ICON_EXPAND = '<svg viewBox="0 0 24 24"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>';
+const allGroupIds = () => ["__pinned", "__none", ...state.projects.map((p) => p.id)];
+function paintCollapseBtn() {
+  const all = allGroupIds().every((id) => state.collapsed.has(id));
+  const b = $("collapse-btn");
+  b.innerHTML = all ? ICON_EXPAND : ICON_COLLAPSE;
+  b.title = all ? "Expand all" : "Collapse all";
+}
+$("collapse-btn").addEventListener("click", () => {
+  const all = allGroupIds().every((id) => state.collapsed.has(id));
+  if (all) state.collapsed.clear(); else allGroupIds().forEach((id) => state.collapsed.add(id));
+  lsSet("sb-collapsed", [...state.collapsed]);
+  renderNotesList();
+});
+
+/* auto-reveal current file */
+state.autoReveal = lsGet("sb-reveal", false);
+$("reveal-btn").classList.toggle("on", state.autoReveal);
+function groupIdOf(it) {
+  if (it.pinned) return "__pinned";
+  return state.projects.some((p) => p.id === it.project_id) ? it.project_id : "__none";
+}
+function revealActive() {
+  let it = null;
+  if (state.view === "notes" && state.activeNoteId) it = state.noteMap.get(state.activeNoteId);
+  else if (state.view === "canvas" && C.id) it = canvasCache.get(C.id);
+  if (!it) return;
+  const gid = groupIdOf(it);
+  if (state.collapsed.delete(gid)) lsSet("sb-collapsed", [...state.collapsed]);
+  renderNotesList();
+  requestAnimationFrame(() => { const a = notesList.querySelector(".note-item.active"); if (a) a.scrollIntoView({ block: "nearest" }); });
+}
+$("reveal-btn").addEventListener("click", () => {
+  state.autoReveal = !state.autoReveal;
+  lsSet("sb-reveal", state.autoReveal);
+  $("reveal-btn").classList.toggle("on", state.autoReveal);
+  if (state.autoReveal) revealActive();
+});
+
+/* inline rename */
+function inlineRename(item, value, commit) {
+  const t = item && item.querySelector(".ni-title");
+  if (!t) return;
+  item.draggable = false;
+  const inp = el("input", "ni-rename");
+  inp.value = value;
+  t.replaceWith(inp);
+  inp.focus(); inp.select();
+  let done = false;
+  const finish = (ok) => {
+    if (done) return;
+    done = true;
+    const v = inp.value.trim();
+    if (ok && v && v !== value) commit(v); else renderNotesList();
+  };
+  inp.addEventListener("keydown", (ev) => {
+    ev.stopPropagation();
+    if (ev.key === "Enter") { ev.preventDefault(); finish(true); }
+    else if (ev.key === "Escape") { ev.preventDefault(); finish(false); }
+  });
+  inp.addEventListener("blur", () => finish(true));
+  inp.addEventListener("click", (ev) => ev.stopPropagation());
+}
+async function renameNote(n, title) {
+  const old = n.title || "";
+  const clash = findNoteByTitle(title);
+  if (clash && clash.id !== n.id) { notifyErr("A note with that name already exists."); renderNotesList(); return; }
+  try {
+    const { error } = await supabase.from('notes').update({ title, updated_at: new Date().toISOString() }).eq('id', n.id);
+    if (error) throw error;
+    if (state.activeNoteId === n.id) noteTitleInput.value = title;
+    if (old) { // keep [[links]] pointing at the renamed note
+      const rx = old.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const test = new RegExp("\\[\\[" + rx + "(?=[\\]|#])", "i");
+      const sub = new RegExp("\\[\\[" + rx + "(?=[\\]|#])", "gi");
+      for (const o of state.notes.filter((x) => x.id !== n.id && test.test(x.content || ""))) {
+        await supabase.from('notes').update({ content: o.content.replace(sub, "[[" + title) }).eq('id', o.id);
+      }
+    }
+  } catch (e) { notifyErr(e.message); renderNotesList(); }
+}
+async function renameCanvasById(id, name) {
+  const d = canvasCache.get(id);
+  if (!d) return;
+  try {
+    const { error } = await supabase.from('canvases').update({ name, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+    canvasCache.set(id, { ...d, name });
+    if (C.id === id) C.name = name;
+    updateCanvasSelect();
+    renderNotesList();
+  } catch (e) { notifyErr(e.message); renderNotesList(); }
+}
+async function duplicateNote(n) {
+  try {
+    await createNoteDoc({ title: uniqueTitle(`${n.title || "Untitled"} copy`), projectId: n.project_id || "", content: n.content || "", tags: n.tags || [] });
+    toast("Note duplicated", { ms: 1500 });
+  } catch (e) { notifyErr(e.message); }
+}
+async function duplicateCanvas(d) {
+  const now = new Date().toISOString();
+  const row = { user_id: state.uid, name: nameOfCanvas(d) + " copy", project_id: d.project_id || null, pinned: false, cards: d.cards || [], edges: d.edges || [], created_at: now, updated_at: now };
+  try {
+    const { data, error } = await supabase.from('canvases').insert([row]).select().single();
+    if (error) throw error;
+    canvasCache.set(data.id, data);
+    updateCanvasSelect();
+    renderNotesList();
+    toast("Canvas duplicated", { ms: 1500 });
+  } catch (e) { notifyErr(e.message); }
+}
+function moveItems(currentProjectId, onPick) {
+  return [
+    { heading: "Move to" },
+    { label: "No project", checked: !currentProjectId, run: () => onPick("") },
+    ...[...state.projects].sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+      .map((p) => ({ label: p.name || "Untitled project", checked: currentProjectId === p.id, run: () => onPick(p.id) }))
+  ];
+}
+function renameActive() {
+  revealActive();
+  requestAnimationFrame(() => {
+    const item = notesList.querySelector(".note-item.active");
+    if (!item) return;
+    if (item.dataset.noteId) { const n = state.noteMap.get(item.dataset.noteId); if (n) inlineRename(item, n.title || "", (v) => renameNote(n, v)); }
+    else if (item.dataset.canvasId) { const d = canvasCache.get(item.dataset.canvasId); if (d) inlineRename(item, nameOfCanvas(d), (v) => renameCanvasById(d.id, v)); }
+  });
+}
+notesList.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  const x = e.clientX, y = e.clientY;
+  const ni = e.target.closest(".note-item");
+  const head = e.target.closest(".nl-head");
+  if (ni && ni.dataset.noteId) {
+    const n = state.noteMap.get(ni.dataset.noteId);
+    if (!n) return;
+    showCtx(x, y, [
+      { label: "Open", run: () => openNote(n) },
+      { label: "Rename", run: () => inlineRename(ni, n.title || "", (v) => renameNote(n, v)) },
+      { label: n.pinned ? "Unpin" : "Pin", run: () => togglePin(n.id) },
+      { label: "Duplicate", run: () => duplicateNote(n) },
+      { sep: true },
+      ...moveItems(n.project_id, (pid) => moveNoteToProject(n.id, pid)),
+      { sep: true },
+      { label: "Delete", danger: true, run: async () => { if (await confirmDialog(`Delete “${n.title || "Untitled"}”?`, "This note will be permanently deleted.")) deleteNoteById(n.id); } }
+    ]);
+    return;
+  }
+  if (ni && ni.dataset.canvasId) {
+    const d = canvasCache.get(ni.dataset.canvasId);
+    if (!d) return;
+    showCtx(x, y, [
+      { label: "Open", run: () => openCanvasInView(d.id) },
+      { label: "Rename", run: () => inlineRename(ni, nameOfCanvas(d), (v) => renameCanvasById(d.id, v)) },
+      { label: d.pinned ? "Unpin" : "Pin", run: () => toggleCanvasPin(d.id) },
+      { label: "Duplicate", run: () => duplicateCanvas(d) },
+      { sep: true },
+      ...moveItems(d.project_id, (pid) => moveCanvasToProject(d.id, pid)),
+      { sep: true },
+      { label: "Delete", danger: true, run: () => deleteCanvasById(d.id) }
+    ]);
+    return;
+  }
+  if (head && head.dataset.projectId) {
+    const p = state.projects.find((q) => q.id === head.dataset.projectId);
+    if (!p) return;
+    showCtx(x, y, [
+      { label: "New note", run: () => newNote({ projectId: p.id }) },
+      { label: "New canvas", run: () => newCanvasFlow(p.id) },
+      { sep: true },
+      { label: "Edit project", run: () => editProjectFlow(p) },
+      { label: "Delete project", danger: true, run: () => deleteProjectFlow(p) }
+    ]);
+    return;
+  }
+  showCtx(x, y, [
+    { label: "New note", run: () => newNote() },
+    { label: "New canvas", run: () => newCanvasFlow() },
+    { label: "New project", run: () => newProjectFlow() }
+  ]);
+});
 $("new-note-btn").addEventListener("click", () => newNote());
 $("quick-open-btn").addEventListener("click", () => quickSwitcher());
 
@@ -1162,6 +1401,7 @@ function openNote(note) {
   updateMetaInfo(live);
   renderBacklinks();
   renderNotesList();
+  if (state.autoReveal) revealActive();
   hideSuggest();
   noteContentInput.scrollTop = 0;
   previewEl.scrollTop = 0;
@@ -1540,8 +1780,9 @@ document.addEventListener("keydown", (e) => {
   if (mod && k === "k") { e.preventDefault(); quickSwitcher(); }
   else if (e.altKey && k === "n") { e.preventDefault(); newNote(); }
   else if (mod && k === "e" && state.view === "notes") { e.preventDefault(); setMode(state.mode === "preview" ? "edit" : "preview"); }
+  else if (k === "f2") { e.preventDefault(); renameActive(); }
   else if (mod && k === "s") { e.preventDefault(); if (state.view === "notes") { performSave(); toast("Saved", { type: "ok", ms: 1200 }); } }
-  else if (mod && e.shiftKey && k === "f") { e.preventDefault(); searchInput.focus(); searchInput.select(); }
+  else if (mod && e.shiftKey && k === "f") { e.preventDefault(); openSearch(); }
 });
 
 /* ==========================================================================
@@ -2213,7 +2454,7 @@ const C = {
   selected: new Set(), selEdge: null,
   undo: [], redo: [],
   z: 1, raf: 0, moved: false, needFit: false, viewT: null,
-  opt: Object.assign({ grid: true, objects: true, physics: false, readonly: false }, lsGet("cv-opt", {}))
+  opt: Object.assign({ grid: false, objects: true, physics: false, readonly: false }, lsGet("cv-opt", {}))
 };
 const canvasCache = new Map();
 
@@ -2283,6 +2524,7 @@ function normEdge(e) {
     id: e.id || genId(), from: e.from, to: e.to,
     fromSide: e.fromSide || null, toSide: e.toSide || null,
     color: e.color || "", dir,
+    label: e.label || "", style: e.style === "straight" ? "straight" : "curve",
     pulse: 0
   };
 }
@@ -2292,7 +2534,8 @@ const serCard = (c) => ({
   color: c.color || "", manual: c.manual
 });
 const serEdge = (e) => ({
-  id: e.id, from: e.from, to: e.to, fromSide: e.fromSide, toSide: e.toSide, color: e.color || "", dir: e.dir || "none"
+  id: e.id, from: e.from, to: e.to, fromSide: e.fromSide, toSide: e.toSide, color: e.color || "", dir: e.dir || "none",
+  label: e.label || "", style: e.style || "curve"
 });
 
 function deriveLinks(d) {
@@ -2335,7 +2578,7 @@ function resetCanvasState() {
 function clearCanvasDom() {
   C.cards.forEach((c) => c.el && c.el.remove());
   C.cards.clear();
-  C.edgeEls.forEach((o) => { o.path.remove(); o.hit.remove(); o.arrow.remove(); o.arrow2.remove(); o.grad.remove(); });
+  C.edgeEls.forEach((o) => { o.path.remove(); o.hit.remove(); o.arrow.remove(); o.arrow2.remove(); o.grad.remove(); o.lbl.remove(); o.lblBg.remove(); });
   C.edgeEls.clear();
   C.edges = [];
   C.editing = null;
@@ -2484,11 +2727,11 @@ function promptDialog(title, value = "", placeholder = "") {
   });
 }
 
-async function newCanvasFlow() {
+async function newCanvasFlow(projectId = null) {
   const name = await promptDialog("New canvas", "", "Canvas name");
   if (name === null) return;
   flushCanvasSave();
-  const data = blankCanvas(name || "Untitled canvas");
+  const data = blankCanvas(name || "Untitled canvas", projectId);
   data.user_id = state.uid;
   try {
     const { data: res, error } = await supabase.from('canvases').insert([data]).select().single();
@@ -2552,6 +2795,7 @@ function openCanvasInView(id) {
   if (!canvasCache.has(id)) return;
   if (C.id !== id || !C.loaded) loadCanvasData(id);
   switchView("canvas");
+  if (state.autoReveal) revealActive();
   closeSidebar();
 }
 
@@ -2575,20 +2819,19 @@ $("canvas-import").addEventListener("click", async () => {
   if (ro()) return;
   const options = sortedCanvasIds().filter((id) => id !== C.id);
   if (!options.length) { toast("No other canvases to import.", { type: "err", ms: 1800 }); return; }
-  const pickedId = await openModal((resolve) => {
-    const box = el("div", "modal modal-sm");
+  const pickedId = await openModal((box, close) => {
     box.append(el("h3", "", "Import a canvas"));
-    const list = el("div", "pick-list");
+    const list = el("div", "qs-list");
     options.forEach((id) => {
-      const row = el("div", "pick-row", "🗂 " + nameOfCanvas(canvasCache.get(id)));
-      row.onclick = () => resolve(id);
+      const row = el("div", "qs-row", "🗂 " + nameOfCanvas(canvasCache.get(id)));
+      row.onclick = () => close(id);
       list.append(row);
     });
-    box.append(list);
+    const row = el("div", "modal-actions");
     const cancel = el("button", "btn btn-sm", "Cancel");
-    cancel.onclick = () => resolve(null);
-    box.append(cancel);
-    return box;
+    cancel.onclick = () => close(null);
+    row.append(cancel);
+    box.append(list, row);
   });
   if (!pickedId) return;
   pushHistory();
@@ -2635,9 +2878,9 @@ function zoomAnimFrame() {
     applyCanvasView();
     return;
   }
-  v.x += dx * 0.25;
-  v.y += dy * 0.25;
-  v.s += ds * 0.25;
+  v.x += dx * 0.18;
+  v.y += dy * 0.18;
+  v.s += ds * 0.18;
   applyCanvasView();
   C.zoomAnim = requestAnimationFrame(zoomAnimFrame);
 }
@@ -2669,8 +2912,8 @@ function zoomBy(f) {
   const ny = my - (my - base.y) * (ns / base.s);
   zoomLerpTo({ x: nx, y: ny, s: ns });
 }
-function fitView() {
-  const cs = [...C.cards.values()];
+function fitView(list) {
+  const cs = Array.isArray(list) ? list : [...C.cards.values()];
   if (!cs.length) {
     zoomLerpTo({ x: canvasArea.clientWidth / 2, y: canvasArea.clientHeight / 2, s: 1 });
     return;
@@ -2690,15 +2933,38 @@ function onCanvasShown() {
 }
 $("tool-zoom-in").addEventListener("click", () => zoomBy(1.2));
 $("tool-zoom-out").addEventListener("click", () => zoomBy(1 / 1.2));
-$("tool-fit").addEventListener("click", fitView);
-$("canvas-reset-view").addEventListener("click", fitView);
+$("tool-fit").addEventListener("click", () => fitView());
+$("canvas-reset-view").addEventListener("click", () => fitView());
 
+function zoomToSelection() {
+  const cs = [...C.selected].map((id) => C.cards.get(id)).filter(Boolean);
+  if (!cs.length) { fitView(); return; }
+  fitView(cs);
+}
+
+// Obsidian-style wheel: mouse wheel zooms, trackpad two-finger scroll pans,
+// pinch (ctrlKey wheel) zooms.
 canvasArea.addEventListener("wheel", (e) => {
+  if (e.target.closest(".canvas-ui") || e.target.closest(".cc-edit")) return;
+  const noteBody = !e.ctrlKey && e.target.closest(".canvas-card.is-note.selected:not(.editing) .cc-body");
+  if (noteBody && noteBody.scrollHeight > noteBody.clientHeight + 1) return; // let a selected note card scroll
   e.preventDefault();
   const r = canvasArea.getBoundingClientRect();
   const mx = e.clientX - r.left, my = e.clientY - r.top;
   const base = C.viewTarget || C.view;
-  const factor = e.deltaY < 0 ? 1.1 : 0.9;
+  const isPinch = e.ctrlKey;
+  const looksLikeTrackpad = e.deltaMode === 0 && !isPinch &&
+    (e.deltaX !== 0 || !Number.isInteger(e.deltaY) || Math.abs(e.deltaY) < 50);
+  if (looksLikeTrackpad) {
+    C.viewTarget = null;
+    C.view.x -= e.deltaX;
+    C.view.y -= e.deltaY;
+    applyCanvasView();
+    return;
+  }
+  // Ctrl+wheel (and pinch): proportional steps, eased toward the target
+  const step = Math.max(-40, Math.min(40, e.deltaY));
+  const factor = isPinch ? Math.exp(-step * 0.005) : (e.deltaY < 0 ? 1.1 : 0.9);
   const ns = Math.max(0.2, Math.min(3, base.s * factor));
   const nx = mx - (mx - base.x) * (ns / base.s);
   const ny = my - (my - base.y) * (ns / base.s);
@@ -2709,7 +2975,7 @@ function applyOpts() {
   canvasArea.classList.toggle("readonly", ro());
   [["opt-grid", "grid"], ["opt-objects", "objects"], ["opt-physics", "physics"], ["opt-readonly", "readonly"]]
     .forEach(([id, k]) => { $(id).checked = !!C.opt[k]; });
-  ["tool-card", "tool-note", "tool-undo", "tool-redo"].forEach((id) => { $(id).disabled = ro(); });
+  ["tool-card", "tool-note", "tool-group", "tool-undo", "tool-redo"].forEach((id) => { $(id).disabled = ro(); });
   $("tool-card").draggable = !ro();
   if (ro()) endEdit(true);
   buildToolbar();
@@ -2744,7 +3010,7 @@ function createCardEl(c) {
     '<div class="cc-head"></div><div class="cc-body"><div class="cc-md"></div></div>' +
     '<div class="cc-handle" data-side="top"></div><div class="cc-handle" data-side="right"></div>' +
     '<div class="cc-handle" data-side="bottom"></div><div class="cc-handle" data-side="left"></div>' +
-    '<div class="cc-resize" title="Resize"></div>';
+    ["n", "s", "e", "w", "ne", "nw", "se", "sw"].map((d) => `<div class="cc-rs" data-dir="${d}"></div>`).join("");
   c.el = e;
   c._src = null;
   canvasWorld.append(e);
@@ -2754,13 +3020,16 @@ function fillCard(c) {
   const e = c.el;
   e.classList.toggle("is-text", c.type === "text");
   e.classList.toggle("is-embed", c.type === "canvas");
+  e.classList.toggle("is-group", c.type === "group");
+  e.classList.toggle("is-note", c.type === "note");
+  if (c.type === "group") e.style.zIndex = -1;
   let src, head = "", body;
   if (c.type === "note") {
     const n = state.noteMap.get(c.noteId);
     if (n) { head = n.title || "Untitled"; src = head + "\u0000" + (n.content || ""); }
     else { head = state.notesLoaded ? "Deleted note" : "…"; src = "missing:" + state.notesLoaded; }
     if (c._src === src) return;
-    body = n ? renderMarkdown(trunc(n.content || "", 900)) || '<p class="muted">Empty note</p>' : '<p class="muted">This note no longer exists.</p>';
+    body = n ? renderMarkdown(trunc(n.content || "", 20000)) || '<p class="muted">Empty note</p>' : '<p class="muted">This note no longer exists.</p>';
   } else if (c.type === "canvas") {
     const d = canvasCache.get(c.canvasId);
     head = d ? "🗂 " + nameOfCanvas(d) : "🗂 Missing canvas";
@@ -2770,6 +3039,11 @@ function fillCard(c) {
     body = d
       ? `<p class="muted">${count} card${count === 1 ? "" : "s"} · double-click to open</p>`
       : '<p class="muted">This canvas was deleted.</p>';
+  } else if (c.type === "group") {
+    head = c.text || "Group";
+    src = "group:" + head;
+    if (c._src === src) return;
+    body = "";
   } else {
     src = c.text;
     if (c._src === src) return;
@@ -2798,6 +3072,10 @@ function refreshCanvasColors() {
     c.el.style.borderColor = col;
     c.el.style.background = `linear-gradient(135deg, ${rgba(col, 0.2)}, ${rgba(col, 0.05)}), #181b21`;
     c.el.style.boxShadow = `0 0 ${6 + Math.min(deg, 6) * 3}px ${rgba(col, 0.22)}`;
+    if (c.type === "group") {
+      c.el.style.background = rgba(col, 0.06);
+      c.el.style.boxShadow = "none";
+    }
     c.el.style.fontSize = (14 * (C.opt.physics ? 1 + Math.min(deg, 6) * 0.05 : 1)) + "px";
   });
 }
@@ -2824,11 +3102,15 @@ function syncEdgeEls() {
     hit.dataset.id = e.id;
     const arrow = svgEl("path", { class: "cedge-arrow" });
     const arrow2 = svgEl("path", { class: "cedge-arrow" });
-    canvasSvg.append(path, arrow, arrow2, hit);
-    C.edgeEls.set(e.id, { path, hit, arrow, arrow2, grad, s1, s2, gid });
+    const lblBg = svgEl("rect", { class: "cedge-lbl-bg", rx: 4 });
+    const lbl = svgEl("text", { class: "cedge-lbl", "text-anchor": "middle", "dominant-baseline": "middle" });
+    lbl.dataset.id = e.id;
+    lblBg.dataset.id = e.id;
+    canvasSvg.append(path, arrow, arrow2, hit, lblBg, lbl);
+    C.edgeEls.set(e.id, { path, hit, arrow, arrow2, grad, s1, s2, gid, lbl, lblBg });
   });
   C.edgeEls.forEach((o, id) => {
-    if (!ids.has(id)) { o.path.remove(); o.hit.remove(); o.arrow.remove(); o.arrow2.remove(); o.grad.remove(); C.edgeEls.delete(id); }
+    if (!ids.has(id)) { o.path.remove(); o.hit.remove(); o.arrow.remove(); o.arrow2.remove(); o.grad.remove(); o.lbl.remove(); o.lblBg.remove(); C.edgeEls.delete(id); }
   });
 }
 
@@ -2843,7 +3125,8 @@ function autoSides(A, B) {
   if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? ["right", "left"] : ["left", "right"];
   return dy >= 0 ? ["bottom", "top"] : ["top", "bottom"];
 }
-function edgePath(p1, s1, p2, s2) {
+function edgePath(p1, s1, p2, s2, style) {
+  if (style === "straight") return `M${p1.x},${p1.y} L${p2.x},${p2.y}`;
   const off = Math.max(30, Math.hypot(p2.x - p1.x, p2.y - p1.y) * 0.4);
   const n1 = SIDE_N[s1], n2 = SIDE_N[s2];
   return `M${p1.x},${p1.y} C${p1.x + n1[0] * off},${p1.y + n1[1] * off} ${p2.x + n2[0] * off},${p2.y + n2[1] * off} ${p2.x},${p2.y}`;
@@ -2859,7 +3142,7 @@ function updateCanvasEdges() {
     if (!A || !B || !o) return;
     const [s1, s2] = e.fromSide && e.toSide ? [e.fromSide, e.toSide] : autoSides(A, B);
     const p1 = sidePoint(A, s1), p2 = sidePoint(B, s2);
-    const d = edgePath(p1, s1, p2, s2);
+    const d = edgePath(p1, s1, p2, s2, e.style);
     o.path.setAttribute("d", d);
     o.hit.setAttribute("d", d);
     o.grad.setAttribute("x1", p1.x); o.grad.setAttribute("y1", p1.y);
@@ -2878,6 +3161,36 @@ function updateCanvasEdges() {
     if (showHead2) { o.arrow.setAttribute("d", arrowPath(p2, s2)); o.arrow.setAttribute("fill", ec || B.col); }
     if (showHead1) { o.arrow2.setAttribute("d", arrowPath(p1, s1)); o.arrow2.setAttribute("fill", ec || A.col); }
     e._mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    e._p1 = p1; e._p2 = p2; e._s1 = s1; e._s2 = s2;
+    if (e.label) {
+      o.lbl.textContent = e.label;
+      o.lbl.setAttribute("x", e._mid.x); o.lbl.setAttribute("y", e._mid.y);
+      o.lbl.style.display = "";
+      try {
+        const bb = o.lbl.getBBox();
+        o.lblBg.setAttribute("x", bb.x - 6); o.lblBg.setAttribute("y", bb.y - 2);
+        o.lblBg.setAttribute("width", bb.width + 12); o.lblBg.setAttribute("height", bb.height + 4);
+        o.lblBg.style.display = "";
+      } catch (_) { o.lblBg.style.display = "none"; }
+    } else { o.lbl.style.display = "none"; o.lblBg.style.display = "none"; }
+  });
+  drawEdgeEnds();
+}
+
+// Reconnect handles at both ends of the selected edge
+let endHandles = [];
+function drawEdgeEnds() {
+  endHandles.forEach((h) => h.remove());
+  endHandles = [];
+  if (!C.selEdge || ro()) return;
+  const e = C.edges.find((x) => x.id === C.selEdge);
+  if (!e || !e._p1) return;
+  [["from", e._p1], ["to", e._p2]].forEach(([end, p]) => {
+    const h = svgEl("circle", { class: "cedge-end", cx: p.x, cy: p.y, r: 7 });
+    h.dataset.end = end;
+    h.dataset.id = e.id;
+    canvasSvg.append(h);
+    endHandles.push(h);
   });
 }
 
@@ -2908,6 +3221,7 @@ function physicsStep(pinned) {
   for (let i = 0; i < cards.length; i++) {
     for (let j = i + 1; j < cards.length; j++) {
       const a = cards[i], b = cards[j];
+      if (a.type === "group" || b.type === "group") continue; // groups are containers, not obstacles
       const dxc = a.x + a.w / 2 - (b.x + b.w / 2), dyc = a.y + a.h / 2 - (b.y + b.h / 2);
       const ox = (a.w + b.w) / 2 + pad - Math.abs(dxc), oy = (a.h + b.h) / 2 + pad - Math.abs(dyc);
       if (ox <= 0 || oy <= 0) continue;
@@ -2921,7 +3235,7 @@ function physicsStep(pinned) {
   C.edges.forEach((e) => {
     if (!e.pulse || e.pulse < 0.02) { e.pulse = 0; return; }
     const a = C.cards.get(e.from), b = C.cards.get(e.to);
-    if (!a || !b) return;
+    if (!a || !b || a.type === "group" || b.type === "group") return;
     const dx = b.x + b.w / 2 - (a.x + a.w / 2), dy = b.y + b.h / 2 - (a.y + a.h / 2);
     const d = Math.hypot(dx, dy) || 1;
     const ideal = (a.w + b.w) / 2 + 140;
@@ -2982,25 +3296,45 @@ function snapMove(m, rawDx, rawDy, alt) {
   drawGuides(guides);
   return { dx: nx - m.bbox.x, dy: ny - m.bbox.y };
 }
-function snapResize(c, right, bottom, alt) {
+function snapResize(c, m, p, alt) {
+  // Resize from any edge/corner; the opposite edge stays fixed (Obsidian).
+  const dir = m.dir || "se";
+  let L = m.x, T = m.y, R = m.x + m.w, B = m.y + m.h;
+  const dx = p.x - m.sx, dy = p.y - m.sy;
+  if (dir.includes("e")) R += dx;
+  if (dir.includes("w")) L += dx;
+  if (dir.includes("s")) B += dy;
+  if (dir.includes("n")) T += dy;
   const guides = [];
   if (!alt) {
     const thr = 8 / C.view.s;
     let sx = null, sy = null;
+    const movX = dir.includes("e") ? R : dir.includes("w") ? L : null;
+    const movY = dir.includes("s") ? B : dir.includes("n") ? T : null;
     if (C.opt.objects) {
       C.cards.forEach((o) => {
         if (o.id === c.id) return;
-        [o.x, o.x + o.w / 2, o.x + o.w].forEach((b) => { const d = b - right; if (Math.abs(d) <= thr && (!sx || Math.abs(d) < Math.abs(sx.d))) sx = { d, at: b, o }; });
-        [o.y, o.y + o.h / 2, o.y + o.h].forEach((b) => { const d = b - bottom; if (Math.abs(d) <= thr && (!sy || Math.abs(d) < Math.abs(sy.d))) sy = { d, at: b, o }; });
+        if (movX != null) [o.x, o.x + o.w / 2, o.x + o.w].forEach((b) => { const d = b - movX; if (Math.abs(d) <= thr && (!sx || Math.abs(d) < Math.abs(sx.d))) sx = { d, at: b, o }; });
+        if (movY != null) [o.y, o.y + o.h / 2, o.y + o.h].forEach((b) => { const d = b - movY; if (Math.abs(d) <= thr && (!sy || Math.abs(d) < Math.abs(sy.d))) sy = { d, at: b, o }; });
       });
     }
-    if (sx) right += sx.d; else if (C.opt.grid) right = Math.round(right / GRID) * GRID;
-    if (sy) bottom += sy.d; else if (C.opt.grid) bottom = Math.round(bottom / GRID) * GRID;
-    if (sx) guides.push({ v: true, at: sx.at, a: Math.min(c.y, sx.o.y), b: Math.max(bottom, sx.o.y + sx.o.h) });
-    if (sy) guides.push({ v: false, at: sy.at, a: Math.min(c.x, sy.o.x), b: Math.max(right, sy.o.x + sy.o.w) });
+    const gr = (v) => Math.round(v / GRID) * GRID;
+    if (movX != null) {
+      const target = sx ? movX + sx.d : C.opt.grid ? gr(movX) : movX;
+      if (dir.includes("e")) R = target; else L = target;
+    }
+    if (movY != null) {
+      const target = sy ? movY + sy.d : C.opt.grid ? gr(movY) : movY;
+      if (dir.includes("s")) B = target; else T = target;
+    }
+    if (sx) guides.push({ v: true, at: sx.at, a: Math.min(T, sx.o.y), b: Math.max(B, sx.o.y + sx.o.h) });
+    if (sy) guides.push({ v: false, at: sy.at, a: Math.min(L, sy.o.x), b: Math.max(R, sy.o.x + sy.o.w) });
   }
   drawGuides(guides);
-  return { w: Math.max(100, right - c.x), h: Math.max(60, bottom - c.y) };
+  const MINW = 40, MINH = 30;
+  if (R - L < MINW) { if (dir.includes("w")) L = R - MINW; else R = L + MINW; }
+  if (B - T < MINH) { if (dir.includes("n")) T = B - MINH; else B = T + MINH; }
+  return { x: L, y: T, w: R - L, h: B - T };
 }
 const snapG = (v) => (C.opt.grid ? Math.round(v / GRID) * GRID : v);
 
@@ -3030,6 +3364,9 @@ function markToolbar() {
     const d = e ? (e.dir || "none") : "none";
     toolbarEl.querySelectorAll("[data-dir]").forEach((b) => {
       b.classList.toggle("on", b.dataset.dir === d);
+    });
+    toolbarEl.querySelectorAll("[data-style]").forEach((b) => {
+      b.classList.toggle("on", b.dataset.style === (e ? e.style : "curve"));
     });
   }
 }
@@ -3067,6 +3404,25 @@ function buildToolbar() {
       seg.append(b);
     });
     toolbarEl.append(seg, el("span", "tb-sep"));
+    const sty = el("div", "tb-seg");
+    sty.title = "Line shape";
+    [["curve", "⌒", "Curved line"], ["straight", "╱", "Straight line"]].forEach(([v, glyph, tip]) => {
+      const b = el("button", "", glyph);
+      b.type = "button"; b.dataset.style = v; b.title = tip;
+      b.addEventListener("click", (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        const edge = C.edges.find((x) => x.id === C.selEdge);
+        if (!edge) return;
+        pushHistory();
+        edge.style = v;
+        updateCanvasEdges(); markToolbar(); saveCanvas();
+      });
+      sty.append(b);
+    });
+    const lb = el("button", "tb-btn", "Aa");
+    lb.type = "button"; lb.title = "Edit label (double-click line)";
+    lb.addEventListener("click", (ev) => { ev.preventDefault(); ev.stopPropagation(); editEdgeLabel(C.selEdge); });
+    toolbarEl.append(sty, lb, el("span", "tb-sep"));
   }
 
   CARD_COLORS.forEach((p) => {
@@ -3195,25 +3551,87 @@ function addTextCard(wx, wy, opts = {}) {
   if (opts.edit !== false && !opts.text) startEdit(c);
   return c;
 }
-function addNoteCard(noteId, wx, wy) {
+function linkFrom(opts, c) {
+  if (opts && opts.from && C.cards.has(opts.from.id))
+    C.edges.push(normEdge({ id: genId(), from: opts.from.id, to: c.id, fromSide: opts.from.side, toSide: OPP[opts.from.side], color: "", dir: "uni" }));
+}
+function addNoteCard(noteId, wx, wy, opts) {
   if (ro() || !C.loaded || !state.noteMap.has(noteId)) return;
   pushHistory();
   const w = 260, h = 140;
   const c = newCardObj({ type: "note", noteId, x: snapG(wx - w / 2), y: snapG(wy - h / 2), w, h });
   C.cards.set(c.id, c);
+  linkFrom(opts, c);
   touch();
   selectCards([c.id]);
   c.el.style.zIndex = ++C.z;
 }
-function addCanvasCard(canvasId, wx, wy) {
+function addCanvasCard(canvasId, wx, wy, opts) {
   if (ro() || !C.loaded || !canvasCache.has(canvasId)) return;
   pushHistory();
   const w = 280, h = 140;
   const c = newCardObj({ type: "canvas", canvasId, x: snapG(wx - w / 2), y: snapG(wy - h / 2), w, h });
   C.cards.set(c.id, c);
+  linkFrom(opts, c);
   touch();
   selectCards([c.id]);
   c.el.style.zIndex = ++C.z;
+}
+let canvasClip = null;
+const CLIP_TOKEN = "[canvas-cards]";
+function copySelection(cut) {
+  const ids = new Set(C.selected);
+  const cards = [...ids].map((id) => C.cards.get(id)).filter(Boolean).map(serCard);
+  const edges = C.edges.filter((e) => ids.has(e.from) && ids.has(e.to)).map(serEdge);
+  canvasClip = { cards, edges };
+  try { navigator.clipboard && navigator.clipboard.writeText(CLIP_TOKEN); } catch (_) {}
+  toast(`Copied ${cards.length} card${cards.length === 1 ? "" : "s"}`, { ms: 1200 });
+  if (cut) deleteSelection();
+}
+function pasteCards(clip, wx, wy) {
+  if (ro() || !C.loaded || !clip || !clip.cards.length) return;
+  pushHistory();
+  const x1 = Math.min(...clip.cards.map((c) => c.x)), y1 = Math.min(...clip.cards.map((c) => c.y));
+  const x2 = Math.max(...clip.cards.map((c) => c.x + c.w)), y2 = Math.max(...clip.cards.map((c) => c.y + c.h));
+  const dx = wx - (x1 + x2) / 2, dy = wy - (y1 + y2) / 2;
+  const map = new Map();
+  clip.cards.forEach((c) => {
+    const n = normCard({ ...c, id: genId(), x: c.x + dx, y: c.y + dy });
+    C.cards.set(n.id, n);
+    map.set(c.id, n.id);
+  });
+  clip.edges.forEach((e) => {
+    if (map.has(e.from) && map.has(e.to)) C.edges.push(normEdge({ ...e, id: genId(), from: map.get(e.from), to: map.get(e.to) }));
+  });
+  C.selected = new Set(map.values());
+  C.selEdge = null;
+  touch();
+  applySelection();
+}
+let lastPtrWorld = null;
+canvasArea.addEventListener("pointermove", (e) => { lastPtrWorld = canvasToWorld(e); });
+document.addEventListener("paste", (e) => {
+  if (state.view !== "canvas" || ro() || document.querySelector(".modal-overlay")) return;
+  if (e.target.closest && e.target.closest("input,textarea,select")) return;
+  const txt = (e.clipboardData && e.clipboardData.getData("text/plain") || "").trim();
+  const p = lastPtrWorld || viewCenter();
+  if (txt === CLIP_TOKEN && canvasClip) { e.preventDefault(); pasteCards(canvasClip, p.x, p.y); return; }
+  if (!txt) return;
+  e.preventDefault();
+  addTextCard(p.x, p.y, { text: /^https?:\/\/\S+$/.test(txt) ? `[${txt}](${txt})` : txt, edit: false });
+});
+
+function addGroupCard(wx, wy) {
+  if (ro() || !C.loaded) return null;
+  pushHistory();
+  let x = wx - 200, y = wy - 150, w = 400, h = 300;
+  const b = C.selected.size ? selBBox([...C.selected]) : null;
+  if (b) { const pad = 30; x = b.x - pad; y = b.y - pad - 20; w = b.w + pad * 2; h = b.h + pad * 2 + 20; }
+  const c = newCardObj({ type: "group", text: "Group", x: snapG(x), y: snapG(y), w, h });
+  C.cards.set(c.id, c);
+  touch();
+  selectCards([c.id]);
+  return c;
 }
 function addEdge(from, fromSide, to, toSide) {
   if (from === to || ro()) return;
@@ -3256,13 +3674,53 @@ function duplicateSelection() {
   applySelection();
 }
 
-function startEdit(c) {
-  if (ro() || !c || c.type !== "text" || C.editing) return;
+async function editEdgeLabel(id) {
+  const ed = C.edges.find((x) => x.id === id);
+  if (!ed || ro()) return;
+  const v = await promptDialog("Edge label", ed.label || "", "Label (leave empty to remove)");
+  if (v === null) return;
   pushHistory();
+  ed.label = v;
+  updateCanvasEdges();
+  saveCanvas();
+}
+
+let noteSaveTimer = null;
+async function saveNoteFromCard(c, value) {
+  const n = state.noteMap.get(c.noteId);
+  if (!n || n.content === value) return;
+  n.content = value;
+  n.updated_at = new Date().toISOString();
+  try {
+    const { error } = await supabase.from('notes').update({ content: value, updated_at: n.updated_at }).eq('id', n.id);
+    if (error) throw error;
+  } catch (err) { notifyErr("Note save failed: " + err.message); }
+}
+
+function startEdit(c) {
+  if (ro() || !c || C.editing) return;
+  if (c.type === "group") {
+    promptDialog("Group label", c.text, "Label").then((v) => {
+      if (v === null) return;
+      pushHistory();
+      c.text = v; c._src = null; fillCard(c); saveCanvas();
+    });
+    return;
+  }
+  if (c.type !== "text" && c.type !== "note") return;
+  const noteRef = c.type === "note" ? state.noteMap.get(c.noteId) : null;
+  if (c.type === "note" && !noteRef) return;
+  if (c.type === "text") pushHistory();
   C.editing = c.id;
   const ta = document.createElement("textarea");
   ta.className = "cc-edit";
-  ta.value = c.text;
+  ta.value = c.type === "note" ? (noteRef.content || "") : c.text;
+  if (c.type === "note") {
+    ta.addEventListener("input", () => {
+      clearTimeout(noteSaveTimer);
+      noteSaveTimer = setTimeout(() => saveNoteFromCard(c, ta.value), 700);
+    });
+  }
   ta.placeholder = "Write markdown…";
   c.el.classList.add("editing");
   c.el.querySelector(".cc-body").append(ta);
@@ -3281,7 +3739,13 @@ function endEdit(commit) {
   const c = C.cards.get(id);
   if (!c || !c.el) return;
   const ta = c.el.querySelector(".cc-edit");
-  if (ta) { if (commit) c.text = ta.value; ta.remove(); }
+  if (ta) {
+    if (commit) {
+      if (c.type === "note") { clearTimeout(noteSaveTimer); saveNoteFromCard(c, ta.value); }
+      else c.text = ta.value;
+    }
+    ta.remove();
+  }
   c.el.classList.remove("editing");
   c._src = null;
   fillCard(c);
@@ -3343,6 +3807,7 @@ $("tool-note").addEventListener("click", async () => {
   if (it.kind === "canvas") addCanvasCard(it.canvas.id, p.x, p.y);
   else addNoteCard(it.note.id, p.x, p.y);
 });
+$("tool-group").addEventListener("click", () => { if (ro()) return; const p = viewCenter(); addGroupCard(p.x, p.y); });
 $("tool-card").addEventListener("click", () => { if (ro()) return; const p = viewCenter(); addTextCard(p.x, p.y); });
 $("tool-card").addEventListener("dragstart", (e) => {
   if (ro()) { e.preventDefault(); return; }
@@ -3379,12 +3844,54 @@ function startPan(e) {
   C.mode = { type: "pan", sx: e.clientX, sy: e.clientY, vx: C.view.x, vy: C.view.y };
   canvasArea.classList.add("panning");
 }
+function clearDropTargets() {
+  C.cards.forEach((c) => { if (c.el) { c.el.classList.remove("drop-target"); c.el.removeAttribute("data-drop-side"); } });
+}
+function markDropTarget(over, e, exceptId) {
+  C.cards.forEach((c) => {
+    if (!c.el) return;
+    const on = !!over && c.el === over && c.id !== exceptId;
+    c.el.classList.toggle("drop-target", on);
+    if (on) c.el.dataset.dropSide = nearestSide(e, c.el.getBoundingClientRect());
+    else c.el.removeAttribute("data-drop-side");
+  });
+}
+
+// Small popup menu (used when a connection is dropped on empty canvas)
+let canvasMenuEl = null;
+function hideCanvasMenu() { if (canvasMenuEl) { canvasMenuEl.remove(); canvasMenuEl = null; } }
+function showCanvasMenu(cx, cy, items) {
+  hideCanvasMenu();
+  const m = el("div", "canvas-menu canvas-ui");
+  items.forEach((it) => {
+    const b = el("button", "canvas-menu-item", it.label);
+    b.type = "button";
+    b.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+    b.addEventListener("click", (ev) => { ev.stopPropagation(); hideCanvasMenu(); it.run(); });
+    m.append(b);
+  });
+  const r = canvasArea.getBoundingClientRect();
+  m.style.left = Math.max(4, Math.min(r.width - 190, cx - r.left)) + "px";
+  m.style.top = Math.max(4, Math.min(r.height - 40 * items.length - 8, cy - r.top)) + "px";
+  canvasArea.append(m);
+  canvasMenuEl = m;
+  const onKey = (ev) => { if (ev.key === "Escape") { hideCanvasMenu(); document.removeEventListener("keydown", onKey, true); } };
+  document.addEventListener("keydown", onKey, true);
+}
+
 function nearestSide(e, r) {
   const d = { left: e.clientX - r.left, right: r.right - e.clientX, top: e.clientY - r.top, bottom: r.bottom - e.clientY };
   return Object.keys(d).sort((a, b) => d[a] - d[b])[0];
 }
 
 canvasArea.addEventListener("pointerdown", (e) => {
+  hideCanvasMenu();
+  if (e.button === 1) { // middle mouse pans (Obsidian)
+    if (C.editing) endEdit(true);
+    startPan(e);
+    e.preventDefault();
+    return;
+  }
   if (e.button !== 0) return;
 
   if (spaceHeld) {
@@ -3401,10 +3908,21 @@ canvasArea.addEventListener("pointerdown", (e) => {
   const world = canvasToWorld(e);
   const hitEdge = e.target.closest(".cedge-hit");
   const handle = e.target.closest(".cc-handle");
-  const resizeH = e.target.closest(".cc-resize");
+  const resizeH = e.target.closest(".cc-rs");
   const cardEl = e.target.closest(".canvas-card");
   const card = cardEl ? C.cards.get(cardEl.dataset.id) : null;
 
+  const endH = e.target.closest(".cedge-end");
+  if (endH) {
+    const ed = C.edges.find((x) => x.id === endH.dataset.id);
+    if (ed) {
+      C.mode = { type: "reconnect", id: ed.id, end: endH.dataset.end };
+      tempPath = svgEl("path", { class: "cedge temp", fill: "none", stroke: colorHex(ed.color) || DEFAULT_COLOR });
+      canvasSvg.append(tempPath);
+    }
+    e.preventDefault();
+    return;
+  }
   if (hitEdge) {
     C.selected.clear();
     C.selEdge = hitEdge.dataset.id;
@@ -3421,7 +3939,10 @@ canvasArea.addEventListener("pointerdown", (e) => {
   }
   if (resizeH && card) {
     if (!C.selected.has(card.id)) selectCards([card.id]);
-    C.mode = { type: "resize", id: card.id, sx: world.x, sy: world.y, w: card.w, h: card.h, hist: false };
+    C.mode = {
+      type: "resize", id: card.id, dir: resizeH.dataset.dir, sx: world.x, sy: world.y,
+      x: card.x, y: card.y, w: card.w, h: card.h, hist: false
+    };
     e.preventDefault();
     return;
   }
@@ -3433,9 +3954,18 @@ canvasArea.addEventListener("pointerdown", (e) => {
       if (!C.selected.has(card.id)) { e.preventDefault(); return; }
     } else if (!C.selected.has(card.id)) selectCards([card.id]);
     C.selEdge = null;
-    const ids = [...C.selected];
+    const dragSet = new Set(C.selected);
+    C.selected.forEach((gid) => {
+      const g = C.cards.get(gid);
+      if (!g || g.type !== "group") return;
+      C.cards.forEach((o) => {
+        const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+        if (o.id !== g.id && cx >= g.x && cx <= g.x + g.w && cy >= g.y && cy <= g.y + g.h) dragSet.add(o.id);
+      });
+    });
+    const ids = [...dragSet];
     const starts = new Map(ids.map((id) => { const c = C.cards.get(id); return [id, { x: c.x, y: c.y }]; }));
-    ids.forEach((id) => { const c = C.cards.get(id); if (c && c.el) c.el.style.zIndex = ++C.z; });
+    ids.forEach((id) => { const c = C.cards.get(id); if (c && c.el && c.type !== "group") c.el.style.zIndex = ++C.z; });
     C.mode = {
       type: "card", id: card.id, ids, idset: new Set(ids), starts, bbox: selBBox(ids),
       wx: world.x, wy: world.y, sx: e.clientX, sy: e.clientY, moved: false, shift: e.shiftKey
@@ -3443,8 +3973,13 @@ canvasArea.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     return;
   }
-  C.mode = { type: "marquee", x0: e.clientX, y0: e.clientY, base: new Set(e.shiftKey ? C.selected : []) };
-  if (!e.shiftKey) { C.selected.clear(); C.selEdge = null; applySelection(); }
+  // Obsidian: drag on empty space pans; Shift+drag draws a selection box
+  if (e.shiftKey) {
+    C.mode = { type: "marquee", x0: e.clientX, y0: e.clientY, base: new Set(C.selected) };
+  } else {
+    C.selected.clear(); C.selEdge = null; applySelection();
+    startPan(e);
+  }
   e.preventDefault();
 });
 
@@ -3471,9 +4006,8 @@ window.addEventListener("pointermove", (e) => {
     const c = C.cards.get(m.id);
     if (!c) return;
     if (!m.hist) { m.hist = true; pushHistory(); }
-    const p = canvasToWorld(e);
-    const r = snapResize(c, c.x + m.w + (p.x - m.sx), c.y + m.h + (p.y - m.sy), e.altKey);
-    c.w = r.w; c.h = r.h; c.manual = true;
+    const r = snapResize(c, m, canvasToWorld(e), e.altKey);
+    c.x = r.x; c.y = r.y; c.w = r.w; c.h = r.h; c.manual = true;
     C.moved = true;
     wakeCanvas();
   } else if (m.type === "connect") {
@@ -3484,7 +4018,21 @@ window.addEventListener("pointermove", (e) => {
     const off = Math.max(30, Math.hypot(p.x - p1.x, p.y - p1.y) * 0.4);
     tempPath.setAttribute("d", `M${p1.x},${p1.y} C${p1.x + n[0] * off},${p1.y + n[1] * off} ${p.x},${p.y} ${p.x},${p.y}`);
     const over = document.elementFromPoint(e.clientX, e.clientY)?.closest(".canvas-card");
-    C.cards.forEach((c) => c.el && c.el.classList.toggle("drop-target", !!over && c.el === over && c.id !== m.from));
+    markDropTarget(over, e, m.from);
+  } else if (m.type === "reconnect") {
+    const ed = C.edges.find((x) => x.id === m.id);
+    if (!ed || !tempPath) return;
+    const fixedId = m.end === "from" ? ed.to : ed.from;
+    const F = C.cards.get(fixedId);
+    if (!F) return;
+    const fs = m.end === "from" ? (ed._s2 || "left") : (ed._s1 || "right");
+    const p1 = sidePoint(F, fs), n = SIDE_N[fs], p = canvasToWorld(e);
+    const off = Math.max(30, Math.hypot(p.x - p1.x, p.y - p1.y) * 0.4);
+    tempPath.setAttribute("d", ed.style === "straight"
+      ? `M${p1.x},${p1.y} L${p.x},${p.y}`
+      : `M${p1.x},${p1.y} C${p1.x + n[0] * off},${p1.y + n[1] * off} ${p.x},${p.y} ${p.x},${p.y}`);
+    const over = document.elementFromPoint(e.clientX, e.clientY)?.closest(".canvas-card");
+    markDropTarget(over, e, fixedId);
   } else if (m.type === "marquee") {
     const r = canvasArea.getBoundingClientRect();
     const x1 = Math.min(m.x0, e.clientX) - r.left, x2 = Math.max(m.x0, e.clientX) - r.left;
@@ -3514,12 +4062,38 @@ window.addEventListener("pointerup", (e) => {
   else if (m.type === "marquee") marqueeEl.hidden = true;
   else if (m.type === "connect") {
     if (tempPath) { tempPath.remove(); tempPath = null; }
-    C.cards.forEach((c) => c.el && c.el.classList.remove("drop-target"));
+    clearDropTargets();
     const over = document.elementFromPoint(e.clientX, e.clientY)?.closest(".canvas-card");
     if (over && over.dataset.id !== m.from) addEdge(m.from, m.side, over.dataset.id, nearestSide(e, over.getBoundingClientRect()));
     else if (!over && !e.target.closest?.(".canvas-ui")) {
       const p = canvasToWorld(e);
-      addTextCard(p.x, p.y, { from: { id: m.from, side: m.side } });
+      showCanvasMenu(e.clientX, e.clientY, [
+        { label: "Add card", run: () => addTextCard(p.x, p.y, { from: { id: m.from, side: m.side } }) },
+        { label: "Add note from vault", run: async () => {
+          const it = await pickNoteDialog();
+          if (it && it.kind === "note") addNoteCard(it.note.id, p.x, p.y, { from: { id: m.from, side: m.side } });
+          else if (it && it.kind === "canvas") addCanvasCard(it.canvas.id, p.x, p.y, { from: { id: m.from, side: m.side } });
+        } },
+        { label: "Add group", run: () => addGroupCard(p.x, p.y) }
+      ]);
+    }
+  } else if (m.type === "reconnect") {
+    if (tempPath) { tempPath.remove(); tempPath = null; }
+    clearDropTargets();
+    const ed = C.edges.find((x) => x.id === m.id);
+    const over = document.elementFromPoint(e.clientX, e.clientY)?.closest(".canvas-card");
+    if (ed && over) {
+      const otherId = m.end === "from" ? ed.to : ed.from;
+      const newId = over.dataset.id;
+      const dup = C.edges.some((x) => x.id !== ed.id && ((x.from === newId && x.to === otherId) || (x.from === otherId && x.to === newId)));
+      if (newId !== otherId && !dup) {
+        pushHistory();
+        const side = nearestSide(e, over.getBoundingClientRect());
+        if (m.end === "from") { ed.from = newId; ed.fromSide = side; if (!ed.toSide) ed.toSide = ed._s2 || null; }
+        else { ed.to = newId; ed.toSide = side; if (!ed.fromSide) ed.fromSide = ed._s1 || null; }
+        touch();
+        applySelection();
+      }
     }
   }
   wakeCanvas();
@@ -3531,12 +4105,13 @@ canvasArea.addEventListener("dblclick", (e) => {
   if (cardEl) {
     const c = C.cards.get(cardEl.dataset.id);
     if (!c) return;
-    if (c.type === "note") { const n = state.noteMap.get(c.noteId); if (n) openNote(n); }
-    else if (c.type === "canvas") { if (c.canvasId && canvasCache.has(c.canvasId)) switchToCanvas(c.canvasId); }
+    if (c.type === "canvas") { if (c.canvasId && canvasCache.has(c.canvasId)) switchToCanvas(c.canvasId); }
     else startEdit(c);
     return;
   }
-  if (e.target.closest(".cedge-hit") || ro()) return;
+  const he = e.target.closest(".cedge-hit, .cedge-lbl, .cedge-lbl-bg");
+  if (he) { editEdgeLabel(he.dataset.id); return; }
+  if (ro()) return;
   const p = canvasToWorld(e);
   addTextCard(p.x, p.y);
 });
@@ -3546,7 +4121,10 @@ document.addEventListener("keydown", (e) => {
   if (e.target.closest && e.target.closest("input,textarea,select")) return;
   const mod = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
-  if (k === "escape") { C.selected.clear(); C.selEdge = null; applySelection(); return; }
+  if (k === "escape") { hideCanvasMenu(); C.selected.clear(); C.selEdge = null; applySelection(); return; }
+  if (e.shiftKey && !mod && e.code === "Digit1") { e.preventDefault(); fitView(); return; }
+  if (e.shiftKey && !mod && e.code === "Digit2") { e.preventDefault(); zoomToSelection(); return; }
+  if (mod && (k === "c" || k === "x") && C.selected.size) { e.preventDefault(); copySelection(k === "x"); return; }
   if (mod && k === "a") { e.preventDefault(); selectCards([...C.cards.keys()]); return; }
   if (ro()) return;
   if ((k === "delete" || k === "backspace") && (C.selected.size || C.selEdge)) { e.preventDefault(); deleteSelection(); }
@@ -3556,7 +4134,7 @@ document.addEventListener("keydown", (e) => {
   else if (k === "enter" && C.selected.size === 1) {
     e.preventDefault();
     const c = C.cards.get([...C.selected][0]);
-    if (c && c.type === "text") startEdit(c);
+    if (c && (c.type === "text" || c.type === "note" || c.type === "group")) startEdit(c);
   } else if (k.startsWith("arrow") && C.selected.size) {
     e.preventDefault();
     const st = (e.shiftKey ? 5 : 1) * (C.opt.grid ? GRID : 5);

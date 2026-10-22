@@ -2,7 +2,7 @@
 <html lang="en" data-theme="custom">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Second Brain</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -10,17 +10,17 @@
   <div id="app" class="app-shell" hidden>
 
     <header class="navbar">
-      <button class="icon-btn big sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar" aria-label="Toggle sidebar">☰</button>
-      <div class="nav-brand" title="Home">Second Brain</div>
+      <button class="icon-btn big sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar" aria-label="Toggle sidebar" aria-controls="sidebar" aria-expanded="false">☰</button>
+      <div class="nav-brand" title="Home" role="link" tabindex="0">Second Brain</div>
       <div class="nav-actions">
-        <button class="btn btn-sm" id="quick-open-btn" title="Quick open (Ctrl/Cmd+K)">🔍<span class="lbl"> Quick open</span></button>
-        <button class="btn btn-primary btn-sm" id="new-note-btn" title="New note (Alt+N)">+<span class="lbl"> New Note</span></button>
+        <button class="btn btn-sm" id="quick-open-btn" aria-label="Quick open" title="Quick open (Ctrl/Cmd+K)">🔍<span class="lbl"> Quick open</span></button>
+        <button class="btn btn-primary btn-sm" id="new-note-btn" aria-label="New note" title="New note (Alt+N)">+<span class="lbl"> New Note</span></button>
         <button class="btn btn-sm nav-tab" data-view="graph">Graph</button>
         <button class="btn btn-sm nav-tab" data-view="canvas">Canvas</button>
         <div class="user-profile">
-          <img id="user-avatar" alt="" width="32" height="32" />
+          <img id="user-avatar" alt="" aria-hidden="true" width="32" height="32" />
           <span id="user-name" class="lbl">User</span>
-          <button class="btn btn-sm btn-ghost" id="signout-btn"><span class="lbl">Sign Out</span><span class="lbl-sm">⏻</span></button>
+          <button class="btn btn-sm btn-ghost" id="signout-btn" aria-label="Sign out" title="Sign out"><span class="lbl">Sign Out</span><span class="lbl-sm">⏻</span></button>
         </div>
       </div>
     </header>
@@ -41,7 +41,7 @@
           </div>
           <div class="search-wrap" id="search-wrap" hidden>
             <input id="search-input" type="search" placeholder="Search notes…  (Ctrl+Shift+F)" autocomplete="off" spellcheck="false" />
-            <button id="search-clear" class="icon-btn" title="Clear" hidden>×</button>
+            <button id="search-clear" class="icon-btn" aria-label="Clear search" title="Clear" hidden>×</button>
           </div>
           <div id="tag-filter" class="tag-filter" hidden></div>
         </div>
@@ -54,31 +54,31 @@
 
         <div id="note-view" class="note-container" hidden>
           <div class="note-toolbar">
-            <button class="icon-btn big back-btn" id="note-back-btn" title="Back to list">←</button>
-            <div class="mode-switch" role="tablist">
+            <button class="icon-btn big back-btn" id="note-back-btn" aria-label="Back to list" title="Back to list">←</button>
+            <div class="mode-switch" role="group" aria-label="Editor mode">
               <button class="mode-btn" data-mode="edit" title="Editor only">Edit</button>
               <button class="mode-btn" data-mode="split" title="Editor + preview">Split</button>
               <button class="mode-btn" data-mode="preview" title="Preview only (Ctrl+E)">Preview</button>
             </div>
             <span id="save-status" class="save-status">Saved</span>
             <span class="spacer"></span>
-            <button class="icon-btn big" id="pin-btn" title="Pin note">☆</button>
-            <button class="icon-btn big danger" id="delete-note-btn" title="Delete note">🗑</button>
+            <button class="icon-btn big" id="pin-btn" aria-label="Pin note" title="Pin note">☆</button>
+            <button class="icon-btn big danger" id="delete-note-btn" aria-label="Delete note" title="Delete note">🗑</button>
           </div>
 
-          <input type="text" id="note-title-input" class="note-title" placeholder="Untitled" spellcheck="false" />
+          <input type="text" id="note-title-input" class="note-title" aria-label="Note title" placeholder="Untitled" spellcheck="false" />
 
           <div class="note-meta-row">
-            <select id="note-project-select" class="select-clean" title="Project">
+            <select id="note-project-select" class="select-clean" aria-label="Project" title="Project">
               <option value="">No project</option>
             </select>
             <div class="tags-box" id="tags-box">
-              <input id="tag-input" class="tag-input" placeholder="Add tag…" autocomplete="off" />
+              <input id="tag-input" class="tag-input" aria-label="Add tag" placeholder="Add tag…" autocomplete="off" />
             </div>
           </div>
 
           <div class="editor-panes" id="editor-panes" data-mode="split">
-            <textarea id="note-content-input" class="note-content" spellcheck="false"
+            <textarea id="note-content-input" class="note-content" aria-label="Note content" spellcheck="false"
               placeholder="Start writing…&#10;&#10;Markdown works. Type [[ to link another note, #tag for tags, - [ ] for tasks.&#10;Drag a note from the sidebar to drop a [[backlink]] here."></textarea>
             <div id="note-preview" class="note-preview"></div>
           </div>
@@ -93,7 +93,7 @@
         <div id="graph-view" class="full-view" hidden>
           <div id="graph-container" class="graph-canvas"></div>
           <div class="graph-settings" id="graph-settings">
-            <button class="btn btn-sm" id="cfg-toggle">⚙<span class="lbl"> Forces</span></button>
+            <button class="btn btn-sm" id="cfg-toggle" aria-label="Graph forces">⚙<span class="lbl"> Forces</span></button>
             <div class="panel">
               <label>Repel force <input type="range" id="cfg-repel" min="20" max="400" step="2" value="120" /></label>
               <label>Link distance <input type="range" id="cfg-link" min="30" max="220" step="2" value="80" /></label>
@@ -118,16 +118,16 @@
                 <button type="button" class="tl-speed-btn" data-speed="100">100×</button>
               </div>
             </div>
-            <button class="tl-close-btn" id="tl-close" title="Exit timelapse" hidden>×</button>
+            <button class="tl-close-btn" id="tl-close" aria-label="Exit timelapse" title="Exit timelapse" hidden>×</button>
           </div>
         </div>
 
         <div id="canvas-view" class="full-view" hidden>
           <div class="canvas-header">
-            <select id="canvas-select" class="select-clean select-sm"></select>
+            <select id="canvas-select" class="select-clean select-sm" aria-label="Canvas"></select>
             <button class="btn btn-sm" id="canvas-new" title="New canvas">+ New</button>
-            <button class="icon-btn" id="canvas-rename" title="Rename canvas">✎</button>
-            <button class="icon-btn danger" id="canvas-delete" title="Delete canvas">🗑</button>
+            <button class="icon-btn" id="canvas-rename" aria-label="Rename canvas" title="Rename canvas">✎</button>
+            <button class="icon-btn danger" id="canvas-delete" aria-label="Delete canvas" title="Delete canvas">🗑</button>
             <span class="spacer"></span>
             <button class="btn btn-sm" id="canvas-import" title="Import another canvas as an embed">⤵ Import</button>
             <button class="btn btn-sm" id="canvas-reset-view" title="Zoom to fit">Zoom to fit</button>
@@ -140,13 +140,13 @@
             <div id="card-toolbar" class="canvas-ui" hidden></div>
 
             <div class="canvas-ui canvas-ui-tr">
-              <button class="icon-btn" id="tool-zoom-in" title="Zoom in">+</button>
-              <button class="icon-btn" id="tool-zoom-out" title="Zoom out">−</button>
-              <button class="icon-btn" id="tool-fit" title="Zoom to fit">⤢</button>
-              <button class="icon-btn" id="tool-undo" title="Undo">↶</button>
-              <button class="icon-btn" id="tool-redo" title="Redo">↷</button>
+              <button class="icon-btn" id="tool-zoom-in" aria-label="Zoom in" title="Zoom in">+</button>
+              <button class="icon-btn" id="tool-zoom-out" aria-label="Zoom out" title="Zoom out">−</button>
+              <button class="icon-btn" id="tool-fit" aria-label="Zoom to fit" title="Zoom to fit">⤢</button>
+              <button class="icon-btn" id="tool-undo" aria-label="Undo" title="Undo">↶</button>
+              <button class="icon-btn" id="tool-redo" aria-label="Redo" title="Redo">↷</button>
               <div class="canvas-opts-wrap">
-                <button class="icon-btn" id="canvas-opts-toggle" title="Canvas options">⚙</button>
+                <button class="icon-btn" id="canvas-opts-toggle" aria-label="Canvas options" title="Canvas options">⚙</button>
                 <div class="canvas-opts-panel" id="canvas-opts-panel" hidden>
                   <label><input type="checkbox" id="opt-grid" /> Snap to grid</label>
                   <label><input type="checkbox" id="opt-objects" /> Snap to object</label>
@@ -187,16 +187,16 @@
 
       <div id="email-auth-form" style="display: flex; flex-direction: column; gap: 10px;">
         
-        <input type="text" id="username-input" placeholder="Username (e.g. zeel)" style="display: none; padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-dark); color: var(--text-main); outline: none;" />
+        <input type="text" id="username-input" autocomplete="username" placeholder="Username (e.g. zeel)" style="display: none; padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-dark); color: var(--text-main); outline: none;" />
         <div id="username-warning" style="display: none; font-size: 0.75rem; color: #f59e0b; margin-top: -5px; margin-bottom: 5px;">
           ⚠️ Username cannot be changed later.
         </div>
 
-        <input type="email" id="email-input" placeholder="Email address" style="padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-dark); color: var(--text-main); outline: none;" />
+        <input type="email" id="email-input" autocomplete="email" placeholder="Email address" style="padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-dark); color: var(--text-main); outline: none;" />
         
         <div style="position: relative;">
-          <input type="password" id="password-input" placeholder="Password (min 6 characters)" style="width: 100%; padding: 10px; padding-right: 40px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-dark); color: var(--text-main); outline: none;" />
-          <button type="button" id="toggle-password" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.1rem;">👁️</button>
+          <input type="password" id="password-input" autocomplete="current-password" placeholder="Password (min 6 characters)" style="width: 100%; padding: 10px; padding-right: 40px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-dark); color: var(--text-main); outline: none;" />
+          <button type="button" id="toggle-password" aria-label="Show or hide password" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.1rem;">👁️</button>
         </div>
         
         <div style="display: flex; gap: 10px; margin-top: 5px;">
@@ -214,7 +214,7 @@
     </div>
   </div>
 
-  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
   <div id="modal-root"></div>
 
   <script type="module" src="app.js"></script>

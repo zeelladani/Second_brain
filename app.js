@@ -657,6 +657,9 @@ function noteItem(note, { snippet } = {}) {
     e.dataTransfer.setData("text/note-id", note.id);
     e.dataTransfer.effectAllowed = "copyMove";
   });
+  item.tabIndex = 0;
+  item.setAttribute("role", "button");
+  item.addEventListener("keydown", (e) => { if (e.target === item && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openNote(note); } });
   item.addEventListener("click", () => openNote(note));
   return item;
 }
@@ -684,6 +687,9 @@ function canvasSidebarItem(data) {
     e.dataTransfer.setData("text/canvas-id", id);
     e.dataTransfer.effectAllowed = "copyMove";
   });
+  item.tabIndex = 0;
+  item.setAttribute("role", "button");
+  item.addEventListener("keydown", (e) => { if (e.target === item && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openCanvasInView(id); } });
   item.addEventListener("click", () => openCanvasInView(id));
   return item;
 }
@@ -1219,7 +1225,7 @@ function renderDashboard() {
       <p class="home-tips muted">Tips: <kbd>Alt N</kbd> new note · <kbd>Ctrl K</kbd> quick open · <kbd>Ctrl E</kbd> edit/preview · type <kbd>[[</kbd> to link notes · drag a note or canvas onto a canvas · hold <kbd>Space</kbd> + drag to pan.</p>
       
       <!-- DELETE ACCOUNT SECTION -->
-      <div style="margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+      <div style="margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center;">
         <div>
           <h3 style="font-size: 0.9rem; color: var(--text-main); margin-bottom: 4px;">Danger Zone</h3>
           <p class="muted" style="font-size: 0.75rem;">Once you delete your account, there is no going back. Please be certain.</p>
@@ -1754,8 +1760,35 @@ const sidebarEl = $("sidebar");
 const sidebarScrim = $("sidebar-scrim");
 const isMobile = () => window.matchMedia("(max-width: 860px)").matches;
 
-function openSidebar() { sidebarEl.classList.add("open"); sidebarScrim.classList.add("show"); }
-function closeSidebar() { sidebarEl.classList.remove("open"); sidebarScrim.classList.remove("show"); }
+const sidebarToggleBtn = $("sidebar-toggle");
+function openSidebar() { sidebarEl.classList.add("open"); sidebarScrim.classList.add("show"); sidebarToggleBtn.setAttribute("aria-expanded", "true"); }
+function closeSidebar() { sidebarEl.classList.remove("open"); sidebarScrim.classList.remove("show"); sidebarToggleBtn.setAttribute("aria-expanded", "false"); }
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && sidebarEl.classList.contains("open") && isMobile() && !document.querySelector(".modal-overlay")) { closeSidebar(); sidebarToggleBtn.focus(); }
+});
+document.querySelector(".nav-brand").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); switchView("dashboard"); } });
+
+/* Long-press on touch devices opens the same context menu as right-click */
+(() => {
+  let timer = null, sx = 0, sy = 0, suppressUntil = 0;
+  const clear = () => { clearTimeout(timer); timer = null; };
+  notesList.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1) return clear();
+    const t = e.touches[0], target = e.target;
+    sx = t.clientX; sy = t.clientY;
+    clear();
+    timer = setTimeout(() => {
+      timer = null;
+      suppressUntil = Date.now() + 700;
+      target.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: sx, clientY: sy }));
+    }, 520);
+  }, { passive: true });
+  notesList.addEventListener("touchmove", (e) => { const t = e.touches[0]; if (t && Math.hypot(t.clientX - sx, t.clientY - sy) > 8) clear(); }, { passive: true });
+  notesList.addEventListener("touchend", clear);
+  notesList.addEventListener("touchcancel", clear);
+  notesList.addEventListener("contextmenu", () => { suppressUntil = Date.now() + 700; clear(); }, true);
+  notesList.addEventListener("click", (e) => { if (Date.now() < suppressUntil) { e.stopPropagation(); e.preventDefault(); } }, true);
+})();
 $("sidebar-toggle").addEventListener("click", () => {
   sidebarEl.classList.contains("open") ? closeSidebar() : openSidebar();
 });
@@ -3509,7 +3542,8 @@ function positionToolbar() {
   const r = canvasArea.getBoundingClientRect();
   let sx = C.view.x + cx * C.view.s;
   let sy = C.view.y + top * C.view.s - 54;
-  sx = Math.max(150, Math.min(r.width - 150, sx));
+  const half = Math.min((toolbarEl.offsetWidth || 300) / 2, (r.width - 16) / 2) + 8;
+  sx = Math.max(half, Math.min(r.width - half, sx));
   sy = Math.max(8, Math.min(r.height - 50, sy));
   toolbarEl.style.left = sx + "px";
   toolbarEl.style.top = sy + "px";

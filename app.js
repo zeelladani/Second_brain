@@ -1855,7 +1855,24 @@ function initGraph() {
   resizeGraph();
   new ResizeObserver(() => { resizeGraph(); wake(); }).observe(graphContainer);
 
+  // Two-finger pinch: zoom around the midpoint (also pans with the fingers)
+  const gPtrs = new Map();
+  let gPinch = null;
+  const gPair = () => { const [a, b] = [...gPtrs.values()]; return { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }; };
+
   G.svg.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "touch") {
+      gPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (gPtrs.size === 2) {
+        if (G.drag) { G.drag.fx = G.drag.fy = null; G.drag = null; G.alphaTarget = 0; }
+        G.down = null;
+        G.svg.classList.remove("dragging", "panning");
+        const r = G.svg.getBoundingClientRect(), pr = gPair();
+        gPinch = { d0: pr.d, s0: G.tgt.s, tx0: G.tgt.x, ty0: G.tgt.y, mx0: pr.mx - r.left, my0: pr.my - r.top };
+        try { G.svg.setPointerCapture(e.pointerId); } catch (_) {}
+        return;
+      }
+    }
     const g = e.target.closest("g.node");
     G.down = {
       x: e.clientX, y: e.clientY, moved: false,
@@ -1866,6 +1883,17 @@ function initGraph() {
   });
 
   G.svg.addEventListener("pointermove", (e) => {
+    if (gPtrs.has(e.pointerId)) gPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (gPinch && gPtrs.size >= 2) {
+      const r = G.svg.getBoundingClientRect(), pr = gPair();
+      const ns = Math.max(0.2, Math.min(4, gPinch.s0 * (pr.d / gPinch.d0)));
+      const wx = (gPinch.mx0 - gPinch.tx0) / gPinch.s0, wy = (gPinch.my0 - gPinch.ty0) / gPinch.s0;
+      G.tgt.s = G.cur.s = ns;
+      G.tgt.x = G.cur.x = (pr.mx - r.left) - wx * ns;
+      G.tgt.y = G.cur.y = (pr.my - r.top) - wy * ns;
+      wake();
+      return;
+    }
     const d = G.down;
     if (!d) return;
     if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) {
@@ -1892,6 +1920,12 @@ function initGraph() {
   });
 
   const endPointer = (e) => {
+    if (gPtrs.delete(e.pointerId) && gPinch) {
+      if (gPtrs.size < 2) gPinch = null;
+      G.down = null;
+      try { G.svg.releasePointerCapture(e.pointerId); } catch (_) {}
+      return;
+    }
     const d = G.down;
     if (!d) return;
     if (!d.moved && d.id) {
@@ -3917,6 +3951,56 @@ function nearestSide(e, r) {
   const d = { left: e.clientX - r.left, right: r.right - e.clientX, top: e.clientY - r.top, bottom: r.bottom - e.clientY };
   return Object.keys(d).sort((a, b) => d[a] - d[b])[0];
 }
+
+// Two-finger pinch on touch screens: zoom around the midpoint (also pans)
+const cPtrs = new Map();
+let cPinch = null;
+const cPair = () => { const [a, b] = [...cPtrs.values()]; return { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }; };
+function cancelCanvasMode() {
+  const m = C.mode;
+  if (!m) return;
+  C.mode = null;
+  canvasArea.classList.remove("panning");
+  if (tempPath) { tempPath.remove(); tempPath = null; }
+  clearDropTargets();
+  drawGuides([]);
+  marqueeEl.hidden = true;
+  if ((m.type === "card" && m.moved) || m.type === "resize") saveCanvas();
+}
+canvasArea.addEventListener("pointerdown", (e) => {
+  if (e.pointerType !== "touch" || e.target.closest(".canvas-ui")) return;
+  cPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (cPtrs.size === 2) {
+    if (C.editing) endEdit(true);
+    cancelCanvasMode();
+    hideCanvasMenu();
+    const r = canvasArea.getBoundingClientRect(), pr = cPair();
+    C.viewTarget = null;
+    cPinch = { d0: pr.d, s0: C.view.s, vx0: C.view.x, vy0: C.view.y, mx0: pr.mx - r.left, my0: pr.my - r.top };
+    e.stopImmediatePropagation();
+    e.preventDefault();
+  } else if (cPtrs.size > 2) {
+    e.stopImmediatePropagation();
+  }
+}, true);
+window.addEventListener("pointermove", (e) => {
+  if (cPtrs.has(e.pointerId)) cPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (!cPinch || cPtrs.size < 2) return;
+  const r = canvasArea.getBoundingClientRect(), pr = cPair();
+  const ns = Math.max(0.2, Math.min(3, cPinch.s0 * (pr.d / cPinch.d0)));
+  const wx = (cPinch.mx0 - cPinch.vx0) / cPinch.s0, wy = (cPinch.my0 - cPinch.vy0) / cPinch.s0;
+  C.viewTarget = null;
+  C.view.s = ns;
+  C.view.x = (pr.mx - r.left) - wx * ns;
+  C.view.y = (pr.my - r.top) - wy * ns;
+  applyCanvasView();
+});
+const cPtrEnd = (e) => {
+  if (!cPtrs.delete(e.pointerId)) return;
+  if (cPinch && cPtrs.size < 2) cPinch = null;
+};
+window.addEventListener("pointerup", cPtrEnd);
+window.addEventListener("pointercancel", (e) => { cPtrEnd(e); cancelCanvasMode(); });
 
 canvasArea.addEventListener("pointerdown", (e) => {
   hideCanvasMenu();

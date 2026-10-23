@@ -1205,6 +1205,11 @@ function renderDashboard() {
     <div class="home-inner">
       <h1>${greet} 👋</h1>
       <p class="muted">${notes.length ? "Pick up where you left off." : "Your vault is empty — create your first note."}</p>
+      <div class="mobile-launcher">
+        <button class="ml-btn" data-act="new"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>New note</span></button>
+        <button class="ml-btn" data-act="canvas"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="4" width="7" height="7" rx="1"/><rect x="8" y="14" width="8" height="7" rx="1"/></svg><span>New canvas</span></button>
+        <button class="ml-btn" data-act="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span>Go to file</span></button>
+      </div>
       <div class="home-actions">
         <button class="btn btn-primary" data-act="new">+ New note</button>
         <button class="btn" data-act="project">+ New project</button>
@@ -1759,6 +1764,82 @@ function renderBacklinks() {
 const sidebarEl = $("sidebar");
 const sidebarScrim = $("sidebar-scrim");
 const isMobile = () => window.matchMedia("(max-width: 860px)").matches;
+
+/* ---------- Mobile bottom bar + "more actions" sheet ---------- */
+function todayTitle() {
+  const d = new Date(), p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+async function openDailyNote() {
+  const title = todayTitle();
+  const existing = state.notes.find((n) => !n.archived && n.title === title);
+  if (existing) { openNote(existing); return; }
+  try { openNote(await createNoteDoc({ title, tags: ["daily"] })); }
+  catch (e) { notifyErr(e.message); }
+}
+
+let sheetEl = null;
+function closeSheet() {
+  if (!sheetEl) return;
+  const el = sheetEl; sheetEl = null;
+  el.classList.remove("show");
+  $("bn-menu").setAttribute("aria-expanded", "false");
+  setTimeout(() => el.remove(), 200);
+  document.removeEventListener("keydown", sheetKey, true);
+  $("bn-menu").focus({ preventScroll: true });
+}
+function sheetKey(e) { if (e.key === "Escape") { e.stopPropagation(); closeSheet(); } }
+function openSheet() {
+  if (sheetEl) return;
+  const items = [
+    ["Open graph view", ic_graph, () => switchView("graph")],
+    ["Create new canvas", ic_canvas, () => { switchView("canvas"); newCanvasFlow(); }],
+    ["Open today's daily note", ic_cal, () => openDailyNote()]
+  ];
+  const wrap = document.createElement("div");
+  wrap.className = "sheet-overlay";
+  wrap.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-label="More actions">
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <div class="sheet-list">${items.map((it, i) => `<button class="sheet-item" data-i="${i}">${it[1]}<span>${it[0]}</span></button>`).join("")}</div></div>`;
+  wrap.addEventListener("click", (e) => {
+    if (e.target === wrap) return closeSheet();
+    const b = e.target.closest(".sheet-item");
+    if (!b) return;
+    const run = items[+b.dataset.i][2];
+    closeSheet(); closeSidebar(); run();
+  });
+  // swipe the handle / sheet down to dismiss
+  const sheet = wrap.firstElementChild;
+  let y0 = null, dy = 0;
+  sheet.addEventListener("touchstart", (e) => { if (e.target.closest(".sheet-handle") || sheet.scrollTop === 0) { y0 = e.touches[0].clientY; dy = 0; } }, { passive: true });
+  sheet.addEventListener("touchmove", (e) => {
+    if (y0 == null) return;
+    dy = e.touches[0].clientY - y0;
+    if (dy > 0) { sheet.style.transition = "none"; sheet.style.transform = `translateY(${dy}px)`; }
+  }, { passive: true });
+  sheet.addEventListener("touchend", () => {
+    if (y0 == null) return;
+    y0 = null; sheet.style.transition = ""; sheet.style.transform = "";
+    if (dy > 80) closeSheet();
+  });
+  document.body.append(wrap);
+  sheetEl = wrap;
+  $("bn-menu").setAttribute("aria-expanded", "true");
+  document.addEventListener("keydown", sheetKey, true);
+  requestAnimationFrame(() => { wrap.classList.add("show"); wrap.querySelector(".sheet-item").focus({ preventScroll: true }); });
+}
+const ic_graph = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M8 7.5 10.5 16"/><path d="M16 7.5 13.5 16"/></svg>`;
+const ic_canvas = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="4" width="7" height="7" rx="1"/><rect x="8" y="14" width="8" height="7" rx="1"/></svg>`;
+const ic_cal = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4"/><path d="M16 3v4"/><path d="M3 10h18"/></svg>`;
+// Hide the bottom bar only while the on-screen keyboard is up (visual viewport much shorter than the window)
+if (window.visualViewport) {
+  const vv = window.visualViewport;
+  const onVV = () => document.body.classList.toggle("kbd-open", vv.height < window.innerHeight * 0.75 && isMobile());
+  vv.addEventListener("resize", onVV);
+}
+$("bn-search").addEventListener("click", () => { closeSidebar(); quickSwitcher(); });
+$("bn-new").addEventListener("click", () => { closeSidebar(); newNote(); });
+$("bn-menu").addEventListener("click", () => (sheetEl ? closeSheet() : openSheet()));
 
 const sidebarToggleBtn = $("sidebar-toggle");
 function openSidebar() { sidebarEl.classList.add("open"); sidebarScrim.classList.add("show"); sidebarToggleBtn.setAttribute("aria-expanded", "true"); }

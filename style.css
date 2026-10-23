@@ -1085,7 +1085,7 @@ mark { background: rgba(168, 242, 61, 0.3); color: inherit; border-radius: 2px; 
   .note-meta-row { flex-wrap: wrap; }
   .editor-panes[data-mode="split"] { grid-template-columns: 1fr; }
 
-  .graph-settings { top: auto; bottom: 70px; right: 8px; }
+  .graph-settings { top: 8px; right: 8px; }
   .graph-settings .panel { width: 180px; }
 
   .canvas-header { font-size: 0.8rem; gap: 6px; }
@@ -1233,7 +1233,8 @@ mark { background: rgba(168, 242, 61, 0.3); color: inherit; border-radius: 2px; 
 
 /* Graph: panel & timelapse can coexist */
 .graph-settings .panel { max-width: calc(100vw - 40px); }
-.graph-settings:has(~ .timelapse-bar.active) { top: 12px; }
+.graph-settings .panel { max-height: calc(100dvh - 220px); overflow-y: auto; }
+.lbl-sm svg { width: 18px; height: 18px; display: block; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- Tablet (<= 1100px) ---------- */
 @media (max-width: 1100px) {
@@ -1287,7 +1288,6 @@ mark { background: rgba(168, 242, 61, 0.3); color: inherit; border-radius: 2px; 
   .canvas-header .spacer { display: none; }
   .canvas-ui-bottom { bottom: max(10px, var(--safe-b)); max-width: calc(100% - 16px); }
   .timelapse-bar { bottom: max(10px, var(--safe-b)); }
-  .graph-settings { bottom: calc(70px + var(--safe-b)); }
 
   .tl-speed-col { flex-wrap: nowrap; }
   .ctx-menu { max-width: calc(100vw - 8px); }
@@ -1309,7 +1309,6 @@ mark { background: rgba(168, 242, 61, 0.3); color: inherit; border-radius: 2px; 
   .timelapse-bar.active .tl-main-btn { width: 76px; font-size: 0.72rem; white-space: normal; padding: 0 4px; }
   .tl-close-btn { width: 36px; }
   .tl-controls { padding: 10px 8px; }
-  .graph-settings:has(~ .timelapse-bar.active) { bottom: auto; top: 8px; }
 }
 
 /* Very small / landscape phones: reclaim vertical space */
